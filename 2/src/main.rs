@@ -1,8 +1,9 @@
-use env_logger;
 use std::cmp::Ordering;
 use std::env;
 use std::fs;
 use std::num::ParseIntError;
+
+use itertools::Itertools;
 
 fn load_input() -> String {
     let args: Vec<String> = env::args().collect();
@@ -16,7 +17,7 @@ fn main() -> Result<(), ParseIntError> {
 
     let reports = input
         .split('\n')
-        .filter(|line| *line != "")
+        .filter(|line| !line.is_empty())
         .map(|line| line.split(" ").map(|level| level.parse()).collect())
         .collect::<Result<Vec<Vec<u64>>, ParseIntError>>()?;
 
@@ -27,6 +28,20 @@ fn main() -> Result<(), ParseIntError> {
         .fold(0, |acc, report| if is_safe(report) { acc + 1 } else { acc });
 
     println!("{}", num_reports_safe);
+
+    let num_reports_safe_with_dampener = reports.iter().fold(0, |acc, report| {
+        if report
+            .iter()
+            .combinations(report.len() - 1)
+            .any(|report| is_safe(&report.into_iter().copied().collect::<Vec<u64>>()))
+        {
+            acc + 1
+        } else {
+            acc
+        }
+    });
+
+    println!("{}", num_reports_safe_with_dampener);
 
     Ok(())
 }
@@ -69,5 +84,5 @@ fn is_safe(report: &[u64]) -> bool {
 
     log::debug!("{:?}", differences);
 
-    differences.into_iter().all(|diff| diff >= 1 && diff <= 3)
+    differences.into_iter().all(|diff| (1..=3).contains(&diff))
 }
