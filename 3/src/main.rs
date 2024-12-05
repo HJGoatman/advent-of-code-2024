@@ -6,32 +6,61 @@ use std::str::FromStr;
 #[derive(Debug, PartialEq, Eq)]
 enum Instruction {
     Mul(u32, u32),
-}
-impl Instruction {
-    fn eval(&self) -> u32 {
-        match self {
-            Instruction::Mul(a, b) => a * b,
-        }
-    }
+    Do,
+    Dont,
 }
 
 #[derive(Debug)]
 struct Program {
     instructions: Vec<Instruction>,
 }
-impl Program {
-    fn run(&self) -> u32 {
-        self.instructions
+
+struct Interpreter1 {}
+
+impl Interpreter1 {
+    fn run(&self, program: &Program) -> u32 {
+        program
+            .instructions
             .iter()
-            .map(|instruction| instruction.eval())
+            .map(|instruction| match instruction {
+                Instruction::Mul(a, b) => a * b,
+                Instruction::Do => 0,
+                Instruction::Dont => 0,
+            })
             .sum()
     }
 }
 
-#[derive(Debug)]
-enum ParseProgramError {
-    DigitError(TryFromIntError),
+struct Interpreter2 {
+    instructions_enabled: bool,
 }
+
+impl Interpreter2 {
+    fn run(&mut self, program: &Program) -> u32 {
+        let mut total = 0;
+
+        for instruction in program.instructions.iter() {
+            match instruction {
+                Instruction::Mul(a, b) => {
+                    if self.instructions_enabled {
+                        total += a * b;
+                    }
+                }
+                Instruction::Do => {
+                    self.instructions_enabled = true;
+                }
+                Instruction::Dont => {
+                    self.instructions_enabled = false;
+                }
+            }
+        }
+
+        total
+    }
+}
+
+#[derive(Debug)]
+enum ParseProgramError {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Token {
@@ -41,6 +70,8 @@ enum Token {
     RBracket,
     Comma,
     Invalid,
+    Do,
+    Dont,
 }
 
 fn tokenise(s: &str) -> Result<Vec<Token>, ParseProgramError> {
@@ -50,7 +81,8 @@ fn tokenise(s: &str) -> Result<Vec<Token>, ParseProgramError> {
 
     let mut i = 0;
     while i < s.len() {
-        if i + 3 < s.len() && chars[i..i + 3] == ['m', 'u', 'l'] {
+        let mul_chars = ['m', 'u', 'l'];
+        if i + mul_chars.len() < s.len() && chars[i..i + mul_chars.len()] == mul_chars {
             tokens.push(Token::Mul);
             i += 3;
             continue;
@@ -81,6 +113,20 @@ fn tokenise(s: &str) -> Result<Vec<Token>, ParseProgramError> {
             continue;
         }
 
+        let do_chars = ['d', 'o', '(', ')'];
+        if i + do_chars.len() < s.len() && chars[i..i + do_chars.len()] == do_chars {
+            tokens.push(Token::Do);
+            i += do_chars.len();
+            continue;
+        }
+
+        let dont_chars = ['d', 'o', 'n', '\'', 't', '(', ')'];
+        if i + dont_chars.len() < s.len() && chars[i..i + dont_chars.len()] == dont_chars {
+            tokens.push(Token::Dont);
+            i += dont_chars.len();
+            continue;
+        }
+
         tokens.push(Token::Invalid);
         i += 1;
     }
@@ -99,6 +145,14 @@ fn syntax_analsyis(tokens: &[Token]) -> Vec<Instruction> {
                 instructions.push(instruction);
                 i += used_tokens;
             }
+        }
+
+        if let Token::Do = token {
+            instructions.push(Instruction::Do);
+        }
+
+        if let Token::Dont = token {
+            instructions.push(Instruction::Dont);
         }
 
         i += 1;
@@ -214,8 +268,16 @@ fn main() -> Result<(), ParseProgramError> {
 
     log::debug!("{:?}", program);
 
-    let result = program.run();
+    let interpreter1 = Interpreter1 {};
+
+    let result = interpreter1.run(&program);
     println!("{}", result);
+
+    let mut interpreter2 = Interpreter2 {
+        instructions_enabled: true,
+    };
+    let result2 = interpreter2.run(&program);
+    println!("{}", result2);
     Ok(())
 }
 
