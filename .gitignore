@@ -22,3 +22,5 @@ Cargo.lock
 
 # Don't include puzzle inputs: https://adventofcode.com/2024/about
 *.txt
+.DS_Store
+.envrc
