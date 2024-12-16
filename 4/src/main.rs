@@ -1,6 +1,7 @@
 mod grid;
 
 use grid::Grid;
+use itertools::Itertools;
 use std::collections::HashSet;
 use std::env;
 use std::fmt::{Display, Write};
@@ -19,26 +20,17 @@ fn main() {
 
     log::debug!("{}", grid);
 
-    let target_word = [Letter::X, Letter::M, Letter::A, Letter::S];
-
-    let word_locations = search(&grid, &target_word);
+    let word_locations = search_xmas(&grid);
     assert!(word_locations.iter().all(|word| word.len() == 4));
     let num_occurances = word_locations.len();
 
-    let mut active_characters = HashSet::new();
-    word_locations.iter().for_each(|word| {
-        word.iter().for_each(|position| {
-            active_characters.insert(position);
-        })
-    });
-    let active_grid =
-        grid.map_elements(
-            |(position, v)| match &active_characters.contains(&position) {
-                true => format!("{}", v),
-                false => ".".to_string(),
-            },
-        );
+    let active_grid = create_active_grid(&grid, word_locations);
+    log::debug!("{}", active_grid);
+    println!("{}", num_occurances);
 
+    let word_locations = search_x_mas(&grid);
+    let num_occurances = word_locations.len();
+    let active_grid = create_active_grid(&grid, word_locations);
     log::debug!("{}", active_grid);
     println!("{}", num_occurances);
 }
@@ -96,45 +88,93 @@ impl Display for Letter {
 type Position = (usize, usize);
 type WordLocation = Vec<Position>;
 
-fn search(grid: &Grid<Letter>, target_word: &[Letter]) -> Vec<WordLocation> {
-    let word_rotations = get_word_rotations(target_word);
+fn search_xmas(grid: &Grid<Letter>) -> Vec<WordLocation> {
+    const TARGET_WORD: [Letter; 4] = [Letter::X, Letter::M, Letter::A, Letter::S];
 
-    let mut found_word_locations: Vec<WordLocation> = Vec::new();
+    let mut found_word_locations = Vec::new();
+    let word_rotations = get_word_rotations(&TARGET_WORD);
 
     for word_rotation in word_rotations.iter() {
-        for start_y in 0..grid.get_height() as i32 {
-            for start_x in 0..grid.get_width() as i32 {
-                let potential_match: Vec<(i32, i32)> = word_rotation
+        let mut locations = search(
+            grid,
+            &TARGET_WORD
+                .iter()
+                .copied()
+                .zip(word_rotation.iter().copied())
+                .collect::<Vec<(Letter, (i32, i32))>>(),
+        );
+        found_word_locations.append(&mut locations);
+    }
+
+    found_word_locations
+}
+
+fn search_x_mas(grid: &Grid<Letter>) -> Vec<WordLocation> {
+    const ENDS: [Letter; 2] = [Letter::M, Letter::S];
+    let ends: Vec<Vec<&Letter>> = ENDS
+        .iter()
+        .permutations(2)
+        .cartesian_product(ENDS.iter().permutations(2))
+        .map(|(mut a, mut b)| {
+            a.append(&mut b);
+            a
+        })
+        .collect();
+
+    let mut patterns = Vec::new();
+    for end in ends.into_iter() {
+        let mut pattern = vec![(Letter::A, (0, 0))];
+
+        let end_positions = [(-1, -1), (1, 1), (1, -1), (-1, 1)];
+        end.into_iter()
+            .zip(end_positions.iter())
+            .for_each(|(l, (x, y))| {
+                pattern.push((*l, (*x, *y)));
+            });
+
+        patterns.push(pattern);
+    }
+
+    patterns
+        .iter()
+        .flat_map(|pattern| search(grid, pattern))
+        .collect()
+}
+
+fn search(grid: &Grid<Letter>, pattern: &[(Letter, (i32, i32))]) -> Vec<WordLocation> {
+    let mut found_word_locations: Vec<WordLocation> = Vec::new();
+
+    for start_y in 0..grid.get_height() as i32 {
+        for start_x in 0..grid.get_width() as i32 {
+            let potential_match: Vec<(Letter, (i32, i32))> = pattern
+                .iter()
+                .map(|(v, (x_diff, y_diff))| (*v, (start_x + x_diff, start_y + y_diff)))
+                .collect();
+
+            let word_found =
+                potential_match
                     .iter()
-                    .map(|(x_diff, y_diff)| (start_x + x_diff, start_y + y_diff))
+                    .all(|(expected, (x, y))| match grid.get(*x, *y) {
+                        Some(actual) => actual == expected,
+                        None => false,
+                    });
+
+            if word_found {
+                let last_potential = potential_match.iter().last().unwrap();
+                log::trace!(
+                    "Word found ({}, {}) => ({}, {})",
+                    start_x,
+                    start_y,
+                    last_potential.1 .0,
+                    last_potential.1 .1,
+                );
+
+                let word_location = potential_match
+                    .into_iter()
+                    .map(|(_, (x, y))| (x as usize, y as usize))
                     .collect();
 
-                let word_found =
-                    target_word
-                        .iter()
-                        .zip(potential_match.iter())
-                        .all(|(expected, (x, y))| match grid.get(*x, *y) {
-                            Some(actual) => actual == expected,
-                            None => false,
-                        });
-
-                if word_found {
-                    let last_potential = potential_match.iter().last().unwrap();
-                    log::trace!(
-                        "Word found ({}, {}) => ({}, {})",
-                        start_x,
-                        start_y,
-                        last_potential.0,
-                        last_potential.1,
-                    );
-
-                    let word_location = potential_match
-                        .into_iter()
-                        .map(|(x, y)| (x as usize, y as usize))
-                        .collect();
-
-                    found_word_locations.push(word_location);
-                }
+                found_word_locations.push(word_location);
             }
         }
     }
@@ -161,4 +201,21 @@ fn get_word_rotations(target_word: &[Letter]) -> Vec<Vec<(i32, i32)>> {
                 .collect()
         })
         .collect()
+}
+
+fn create_active_grid(grid: &Grid<Letter>, word_locations: Vec<WordLocation>) -> Grid<String> {
+    let mut active_characters = HashSet::new();
+    word_locations.iter().for_each(|word| {
+        word.iter().for_each(|position| {
+            active_characters.insert(position);
+        })
+    });
+    
+
+    grid.map_elements(
+            |(position, v)| match &active_characters.contains(&position) {
+                true => format!("{}", v),
+                false => ".".to_string(),
+            },
+        )
 }
