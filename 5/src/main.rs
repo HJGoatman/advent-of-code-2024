@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{HashMap, HashSet},
     env, fs,
     num::ParseIntError,
@@ -28,6 +29,7 @@ fn load_input() -> String {
 }
 
 type PageNumber = u32;
+
 type PageOrderingRules = HashMap<u32, HashSet<u32>>;
 
 fn main() {
@@ -36,21 +38,48 @@ fn main() {
     let input = load_input();
 
     let (page_ordering_rules, updates) = parse(&input).unwrap();
-    let correctly_ordered_updates: Vec<&Vec<u32>> = updates
+    let (correct_indexes, correctly_ordered_updates): (HashSet<usize>, Vec<&Vec<u32>>) = updates
         .iter()
-        .filter(|update| is_correct_order(&page_ordering_rules, update))
-        .collect();
+        .enumerate()
+        .filter(|(_, update)| is_correct_order(&page_ordering_rules, update))
+        .unzip();
 
     log::debug!("{:?}", correctly_ordered_updates);
 
-    let middle_page_numbers: Vec<u32> = correctly_ordered_updates
+    let middle_page_numbers = get_middle_page_numbers(&correctly_ordered_updates);
+    let sum: u32 = middle_page_numbers.iter().sum();
+    println!("{}", sum);
+
+    let all_indexes: HashSet<usize> = (0..updates.len()).collect();
+    let incorrect_indexes: HashSet<usize> =
+        all_indexes.difference(&correct_indexes).copied().collect();
+    let (_, incorrectly_ordered_updates): (Vec<usize>, Vec<&Vec<u32>>) = updates
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| incorrect_indexes.contains(i))
+        .unzip();
+
+    let corrected_updates: Vec<Vec<u32>> = incorrectly_ordered_updates
+        .into_iter()
+        .map(|incorrect_update| {
+            let mut update = incorrect_update.clone();
+            update.sort_by(|a, b| is_before(&page_ordering_rules, *a, *b));
+            update
+        })
+        .collect();
+
+    let a: Vec<&Vec<u32>> = corrected_updates.iter().collect();
+    let middle_page_numbers = get_middle_page_numbers(&a);
+    let sum: u32 = middle_page_numbers.iter().sum();
+    println!("{}", sum);
+}
+
+fn get_middle_page_numbers(correctly_ordered_updates: &[&Vec<u32>]) -> Vec<u32> {
+    correctly_ordered_updates
         .iter()
         .map(|update| update.get(((update.len() + 1) / 2) - 1).unwrap())
         .copied()
-        .collect();
-
-    let sum: u32 = middle_page_numbers.iter().sum();
-    println!("{}", sum);
+        .collect()
 }
 
 fn parse(input: &str) -> Result<(PageOrderingRules, Vec<Vec<PageNumber>>), ParseInputError> {
@@ -62,7 +91,7 @@ fn parse(input: &str) -> Result<(PageOrderingRules, Vec<Vec<PageNumber>>), Parse
     let page_ordering_rules = parse_page_ordering_rules(parts[0])?;
     let updates = parse_updates(parts[1]).map_err(ParseInputError::ParseUpdatesError)?;
 
-    return Ok((page_ordering_rules, updates));
+    Ok((page_ordering_rules, updates))
 }
 
 fn parse_page_ordering_rules(parts: &str) -> Result<PageOrderingRules, ParseInputError> {
@@ -88,7 +117,7 @@ fn parse_page_ordering_rules(parts: &str) -> Result<PageOrderingRules, ParseInpu
             });
     });
 
-    return Ok(page_ordering_rules);
+    Ok(page_ordering_rules)
 }
 
 fn parse_rule(input: &str) -> Result<(PageNumber, PageNumber), ParseRuleError> {
@@ -102,7 +131,7 @@ fn parse_rule(input: &str) -> Result<(PageNumber, PageNumber), ParseRuleError> {
         return Err(ParseRuleError::InvalidFormat);
     }
 
-    return Ok((values[0], values[1]));
+    Ok((values[0], values[1]))
 }
 
 fn parse_updates(parts: &str) -> Result<Vec<Vec<u32>>, ParseUpdateError> {
@@ -119,24 +148,27 @@ fn parse_update(line: &str) -> Result<Vec<u32>, ParseIntError> {
 }
 
 fn is_correct_order(page_ordering_rules: &PageOrderingRules, update: &[PageNumber]) -> bool {
-    for i in 0..(update.len() - 1) {
-        for j in i..update.len() {
-            if !is_before(page_ordering_rules, update[i], update[j]) {
-                return false;
-            }
-        }
-    }
-
-    true
+    update.is_sorted_by(|a, b| is_before(page_ordering_rules, *a, *b) != Ordering::Greater)
 }
 
 fn is_before(
     page_ordering_rules: &PageOrderingRules,
     page_number_a: u32,
     page_number_b: u32,
-) -> bool {
-    match page_ordering_rules.get(&page_number_b) {
-        Some(pages_after_b) => !pages_after_b.contains(&page_number_a),
-        _ => true,
+) -> Ordering {
+    match (
+        page_ordering_rules
+            .get(&page_number_a)
+            .map(|pages_after_a| pages_after_a.contains(&page_number_b)),
+        page_ordering_rules
+            .get(&page_number_b)
+            .map(|pages_after_b| pages_after_b.contains(&page_number_a)),
+    ) {
+        (Some(true), Some(true)) => panic!("page numbers need to be before each other"),
+        (Some(true), Some(false)) => Ordering::Less,
+        (Some(false), Some(true)) => Ordering::Greater,
+        (Some(true), None) => Ordering::Less,
+        (None, Some(true)) => Ordering::Greater,
+        _ => Ordering::Equal,
     }
 }
