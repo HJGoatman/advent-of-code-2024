@@ -20,7 +20,7 @@
       });
     in
     {
-      overlays.default = final: prev: {
+      overlays.default = final: prev: rec {
         rustToolchain =
           let
             rust = prev.rust-bin;
@@ -33,6 +33,11 @@
             rust.stable.latest.default.override {
               extensions = [ "rust-src" "rustfmt" ];
             };
+
+        erlang = final.beam.interpreters.erlang;
+        pkgs-beam = final.beam.packagesWith erlang;
+        elixir = pkgs-beam.elixir_1_17;
+
       };
 
       devShells = forEachSupportedSystem ({ pkgs }: {
@@ -45,7 +50,23 @@
             cargo-edit
             cargo-watch
             rust-analyzer
-          ];
+            elixir
+            git
+          ]
+          ++
+          # Linux only
+          pkgs.lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+            gigalixir
+            inotify-tools
+            libnotify
+          ])
+          ++
+          # macOS only
+          pkgs.lib.optionals pkgs.stdenv.isDarwin (with pkgs; [
+            terminal-notifier
+            darwin.apple_sdk.frameworks.CoreFoundation
+            darwin.apple_sdk.frameworks.CoreServices
+          ]);
 
           env = {
             # Required by rust-analyzer

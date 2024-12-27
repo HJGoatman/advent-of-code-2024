@@ -1,6 +1,7 @@
 use std::fmt::{Display, Write};
 use std::str::FromStr;
 
+#[derive(Clone)]
 pub struct Grid<T> {
     values: Vec<T>,
     width: usize,
@@ -78,6 +79,11 @@ where
 
 impl<T> Grid<T> {
     pub fn get(&self, x: i32, y: i32) -> Option<&T> {
+        let index = self.calculate_index(x, y)?;
+        self.values.get(index)
+    }
+
+    fn calculate_index(&self, x: i32, y: i32) -> Option<usize> {
         if x < 0 || y < 0 {
             return None;
         }
@@ -86,7 +92,7 @@ impl<T> Grid<T> {
         }
 
         let index = y as usize * self.width + x as usize;
-        self.values.get(index)
+        Some(index)
     }
 
     pub fn get_width(&self) -> usize {
@@ -116,6 +122,13 @@ impl<T> Grid<T> {
             width: self.width,
             length: self.length,
         }
+    }
+
+    pub(crate) fn set(&mut self, potential_x: i32, potential_y: i32, value: T) -> Option<()> {
+        let index = self.calculate_index(potential_x, potential_y)?;
+
+        self.values[index] = value;
+        Some(())
     }
 }
 
