@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
+use std::i32;
 use std::str::FromStr;
 
 #[derive(Debug, Hash, PartialEq, Eq)]
@@ -15,13 +16,19 @@ struct Map {
 }
 
 impl Map {
-    fn find_antinode_locations(&self) -> HashSet<Position> {
+    fn find_antinode_locations(&self, min_harmonic: i32, max_harmonic: i32) -> HashSet<Position> {
         self.antennas
             .iter()
             .map(|(frequency, locations)| {
                 (
                     frequency,
-                    find_antinode_locations(locations, self.width, self.height),
+                    find_antinode_locations(
+                        locations,
+                        self.width,
+                        self.height,
+                        min_harmonic,
+                        max_harmonic,
+                    ),
                 )
             })
             .inspect(|(frequency, locations)| log::trace!("{:?}: {:?}", frequency, locations))
@@ -31,7 +38,13 @@ impl Map {
     }
 }
 
-fn find_antinode_locations(locations: &[Position], width: u16, height: u16) -> HashSet<Position> {
+fn find_antinode_locations(
+    locations: &[Position],
+    width: u16,
+    height: u16,
+    min_harmonic: i32,
+    max_harmonic: i32,
+) -> HashSet<Position> {
     let mut antinode_locations = HashSet::new();
 
     for i in 0..locations.len() {
@@ -51,29 +64,31 @@ fn find_antinode_locations(locations: &[Position], width: u16, height: u16) -> H
             let delta_x = antenna_b_x - antenna_a_x;
             let delta_y = antenna_b_y - antenna_a_y;
 
-            let antinode_x = antenna_a_x + 2 * delta_x;
-            let antinode_y = antenna_a_y + 2 * delta_y;
+            for harmonic in min_harmonic..max_harmonic {
+                let antinode_x = antenna_a_x + harmonic * delta_x;
+                let antinode_y = antenna_a_y + harmonic * delta_y;
 
-            if antinode_x < 0
-                || antinode_y < 0
-                || antinode_x >= width as i32
-                || antinode_y >= height as i32
-            {
-                continue;
+                if antinode_x < 0
+                    || antinode_y < 0
+                    || antinode_x >= width as i32
+                    || antinode_y >= height as i32
+                {
+                    break;
+                }
+                let antinode_position = Position {
+                    x: antinode_x as u16,
+                    y: antinode_y as u16,
+                };
+
+                log::trace!(
+                    "{:?} -> {:?} => {:?}",
+                    antenna_a_position,
+                    antenna_b_position,
+                    antinode_position
+                );
+
+                antinode_locations.insert(antinode_position);
             }
-            let antinode_position = Position {
-                x: antinode_x as u16,
-                y: antinode_y as u16,
-            };
-
-            log::trace!(
-                "{:?} -> {:?} => {:?}",
-                antenna_a_position,
-                antenna_b_position,
-                antinode_position
-            );
-
-            antinode_locations.insert(antinode_position);
         }
     }
 
@@ -154,7 +169,12 @@ fn main() {
     let map: Map = input.parse().unwrap();
     log::debug!("{:?}", map);
 
-    let antinode_locations = map.find_antinode_locations();
+    let antinode_locations = map.find_antinode_locations(2, 3);
+    log::debug!("{:?}", antinode_locations);
+    let num_antinode_locations = antinode_locations.len();
+    println!("{}", num_antinode_locations);
+
+    let antinode_locations = map.find_antinode_locations(1, i32::MAX);
     log::debug!("{:?}", antinode_locations);
     let num_antinode_locations = antinode_locations.len();
     println!("{}", num_antinode_locations);
