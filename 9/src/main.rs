@@ -13,9 +13,7 @@ impl FromStr for DiskMap {
             .chars()
             .enumerate()
             .map(|(i, c)| {
-                let size =
-                    c.to_digit(10)
-                        .ok_or_else(|| ParseDiskMapError::ParseIntError)? as u8;
+                let size = c.to_digit(10).ok_or(ParseDiskMapError::ParseIntError)? as u8;
 
                 if i % 2 == 0 {
                     Ok(MapItem::File { size })
@@ -70,13 +68,76 @@ fn main() {
     let mut disk_copy = disk.clone();
     compact_files(&mut disk);
 
-    let filesystem_checksum: u64 = checksum(disk);
+    let filesystem_checksum: u64 = checksum(&disk);
 
+    println!("{}", filesystem_checksum);
+
+    compact_whole_files(&mut disk_copy);
+    let filesystem_checksum = checksum(&disk_copy);
     println!("{}", filesystem_checksum);
 }
 
-fn checksum(disk: Vec<u16>) -> u64 {
-    disk.into_iter()
+fn compact_whole_files(disk: &mut [FileID]) {
+    let mut tail_index = disk.len() - 1;
+
+    while tail_index > 0 {
+        if disk[tail_index] == FREE_BLOCK {
+            tail_index -= 1;
+            continue;
+        }
+
+        let mut file_to_move_size = 0;
+        let file_to_move = disk[tail_index];
+        while disk[tail_index] == file_to_move {
+            if tail_index == 0 {
+                return;
+            }
+
+            file_to_move_size += 1;
+            tail_index -= 1;
+        }
+
+        let file_to_move_start_block = tail_index + 1;
+
+        let mut has_free_space = false;
+        let mut head_index = 0;
+        'outer: while head_index < tail_index {
+            if disk[head_index] != FREE_BLOCK {
+                head_index += 1;
+                continue;
+            }
+
+            let free_space_start = head_index;
+            let mut free_space_end = free_space_start + 1;
+            loop {
+                if free_space_end - free_space_start == file_to_move_size {
+                    has_free_space = true;
+                    break 'outer;
+                }
+
+                if disk[free_space_end] != FREE_BLOCK {
+                    head_index = free_space_end;
+                    continue 'outer;
+                }
+
+                free_space_end += 1;
+            }
+        }
+
+        if has_free_space {
+            for file_index in 0..file_to_move_size {
+                disk.swap(
+                    head_index + file_index,
+                    file_to_move_start_block + file_index,
+                );
+            }
+        }
+    }
+}
+
+fn checksum(disk: &[u16]) -> u64 {
+    disk.iter()
+        .copied()
         .enumerate()
         .map(|(block_id, file_id)| {
             if file_id == FREE_BLOCK {
@@ -88,7 +149,7 @@ fn checksum(disk: Vec<u16>) -> u64 {
         .sum()
 }
 
-fn compact_files(disk: &mut Vec<FileID>) {
+fn compact_files(disk: &mut [FileID]) {
     let mut head_index = 0;
     let mut tail_index = disk.len() - 1;
 
