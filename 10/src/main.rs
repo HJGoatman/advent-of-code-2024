@@ -48,6 +48,59 @@ enum Step {
     Right,
 }
 
+trait TrailheadScore: Default + Clone + From<Position> {
+    fn combine(&mut self, other: Self) -> Self;
+    fn get_score(&self) -> u32;
+}
+
+#[derive(Default, Clone)]
+struct OriginalScoring {
+    set: HashSet<Position>,
+}
+
+impl TrailheadScore for OriginalScoring {
+    fn combine(&mut self, other: Self) -> Self {
+        let combined: HashSet<Position> = self.set.union(&other.set).copied().collect();
+        OriginalScoring { set: combined }
+    }
+
+    fn get_score(&self) -> u32 {
+        self.set.len() as u32
+    }
+}
+
+impl From<Position> for OriginalScoring {
+    fn from(value: Position) -> Self {
+        let mut results = HashSet::new();
+
+        results.insert(value);
+        OriginalScoring { set: results }
+    }
+}
+
+#[derive(Default, Clone)]
+struct TrailheadRating {
+    value: u32,
+}
+
+impl TrailheadScore for TrailheadRating {
+    fn combine(&mut self, other: Self) -> Self {
+        TrailheadRating {
+            value: self.value + other.value,
+        }
+    }
+
+    fn get_score(&self) -> u32 {
+        self.value
+    }
+}
+
+impl From<Position> for TrailheadRating {
+    fn from(_: Position) -> Self {
+        TrailheadRating { value: 1 }
+    }
+}
+
 fn load_input() -> String {
     let args: Vec<String> = env::args().collect();
     fs::read_to_string(args.get(1).unwrap()).expect("should have been able to read the file")
@@ -61,16 +114,23 @@ fn main() {
     let topographic_map: Grid<Height> = input.parse().unwrap();
     log::debug!("{}", topographic_map);
 
-    let trailhead_scores = find_trailheads(&topographic_map);
+    let trailhead_scores: Vec<OriginalScoring> = find_trailheads(&topographic_map);
     let combined_trailhead_scores: u32 = trailhead_scores
         .iter()
-        .map(|score| score.len() as u32)
+        .map(|scoring| scoring.get_score())
         .sum();
-    log::debug!("{}", combined_trailhead_scores);
+    println!("{}", combined_trailhead_scores);
+
+    let trailhead_scores: Vec<TrailheadRating> = find_trailheads(&topographic_map);
+    let combined_trailhead_scores: u32 = trailhead_scores
+        .iter()
+        .map(|scoring| scoring.get_score())
+        .sum();
+    println!("{}", combined_trailhead_scores);
 }
 
-fn find_trailheads(map: &Grid<Height>) -> Vec<HashSet<Position>> {
-    let mut cache: HashMap<Position, HashSet<Position>> = HashMap::new();
+fn find_trailheads<T: TrailheadScore>(map: &Grid<Height>) -> Vec<T> {
+    let mut cache: HashMap<Position, T> = HashMap::new();
 
     map.iter()
         .filter(|(_, height)| **height == Height(0))
@@ -79,32 +139,29 @@ fn find_trailheads(map: &Grid<Height>) -> Vec<HashSet<Position>> {
         .collect()
 }
 
-fn find_trailhead(
+fn find_trailhead<T: TrailheadScore>(
     map: &Grid<Height>,
-    cache: &mut HashMap<Position, HashSet<Position>>,
+    cache: &mut HashMap<Position, T>,
     start: Position,
-) -> HashSet<Position> {
+) -> T {
     if let Some(positions) = cache.get(&start) {
         return positions.clone();
     }
 
     if let Some(Height(9)) = map.get(start.x, start.y) {
-        let mut results = HashSet::new();
-
-        results.insert(start);
-        return results;
+        return T::from(start);
     }
 
-    let results: HashSet<Position> = [Step::Up, Step::Down, Step::Left, Step::Right]
+    let results: T = [Step::Up, Step::Down, Step::Left, Step::Right]
         .into_iter()
-        .flat_map(|step| {
+        .map(|step| {
             if let Some(next_position) = try_take_step(map, start, step) {
                 find_trailhead(map, cache, next_position)
             } else {
-                HashSet::new()
+                T::default()
             }
         })
-        .collect();
+        .fold(T::default(), |mut acc, x| acc.combine(x));
 
     cache.insert(start, results.clone());
     results
