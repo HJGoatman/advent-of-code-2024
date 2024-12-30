@@ -1,4 +1,3 @@
-use core::num;
 use std::collections::HashMap;
 use std::env;
 use std::fs;
@@ -24,6 +23,12 @@ fn main() {
     const NUM_BLINKS: u64 = 25;
     let num_stones = stones.iter().fold(0, |acc, stone| {
         acc + count_stones_after_blinking(&mut cache, *stone, NUM_BLINKS)
+    });
+    println!("{}", num_stones);
+
+    const NUM_BLINKS_2: u64 = 75;
+    let num_stones = stones.iter().fold(0, |acc, stone| {
+        acc + count_stones_after_blinking(&mut cache, *stone, NUM_BLINKS_2)
     });
     println!("{}", num_stones);
 }
